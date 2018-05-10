@@ -7,7 +7,7 @@ from arcpy.sa import *
 from random import *
 
 GAP_DETECTOR=2
-DISTANCE_LIMIT=5
+DISTANCE_LIMIT=15
 
 #Row class consists of a head of row, indicating first point in row within the sort;
 #row_coord, the coordinate of the row; row_list, a list of lists of all the id's
@@ -416,6 +416,7 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
 
         min_dist=999999999999999999999
         i=0
+        lowest_of_all=min(row_lowelev_list)
         foundone=False
         
         for point in row_lowelev_list:
@@ -431,10 +432,13 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 arcpy.AddMessage("function coord used is "+str(lowestelev.coordused))
                 Network_node(lowestelev.object_id,lowestelev.section_coord,lowestelev.row_coord,lowestelev.coordused,lowestelev.elevation)
                 current_row.append_node_row(index)
-                return True
+
+                if lowest_of_all==lowestelev:
+                        return (True,"dont add row",i-1)
+                return (True,"add row",i-1)
 
         else:
-                return False
+                return (False, "dont add row",i-1)
                 
 def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_row_coord):
 
@@ -562,7 +566,6 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                 #append the last sections of the previous row to thier respective row lists
                                 row_lowelev_list.append(lowestelev)
                                 current_row.append_section()
-        ##                        arcpy.AddMessage("Row: "+str(current_row.row_id_list))
 
                                 #append network node identified in previous row
                                 result=append_network_node(row_lowelev_list,current_row,previous_row)
@@ -573,11 +576,14 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
 
                                 subsortset.append_section()
 
+                                arcpy.AddMessage(str(row_lowelev_list))
                                 #delete section from subsort that containied the appended network node
-                                subsortset=delete_network_row(lowestelev.object_id,subsortset)
+
+                                if len(row_lowelev_list)>0:
+                                        subsortset=delete_network_row(row_lowelev_list[result[2]].object_id,subsortset)
 
                         #create new row objects for new row
-                        if result==True:
+                        if result[0]==True:
                                 previous_row=current_row
                                 
                         current_row=Row(point.object_id,point.row_coord,point.section_coord)
@@ -595,14 +601,17 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                         subsortneeded_flag=False
 
                                         fixed=convert_list(list(subsortset.row_id_list))
+                                        arcpy.AddMessage(len(fixed))
+                                        arcpy.AddMessage(str(fixed))
+                                        if len(fixed)>2:
 
-                                        lyr=arcpy.MakeFeatureLayer_management(mem_point,"slayer","OBJECTID IN "+fixed)
+                                                lyr=arcpy.MakeFeatureLayer_management(mem_point,"slayer","OBJECTID IN "+fixed)
 
-                                        arcpy.CopyFeatures_management(lyr,os.path.join(env.workspace,naming+"_"+naming+"subsort"))
+                                                arcpy.CopyFeatures_management(lyr,os.path.join(env.workspace,naming+"_"+naming+"subsort"))
 
-                                                
-                                        arcpy.AddMessage("Launching change OG subsort on set "+str(subsortset.row_id_list))
-                                        subsort(subsortset,networklist,sorttable,coordused,"change",networklist[-1].row_coord)
+                                                        
+                                                arcpy.AddMessage("Launching change OG subsort on set "+str(subsortset.row_id_list))
+                                                subsort(subsortset,networklist,sorttable,coordused,"change",networklist[-1].row_coord)
 
                                         consecutive_segment_counter=0
                                         subsortset=Subsort_set("normal")
@@ -663,8 +672,6 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                 gap_and_low=True
 
                                 arcpy.AddMessage("got into elif NE[-1]: "+str(networklist[-1].elevation))
-
-                                #i think i also need to append the -2 row. Nope don't think so
 
                                 if gapsbeingcollected==False:
                                         subsort_adj_ref=networklist[-1].row_coord

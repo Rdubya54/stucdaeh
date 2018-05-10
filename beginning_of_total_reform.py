@@ -7,7 +7,7 @@ from arcpy.sa import *
 from random import *
 
 GAP_DETECTOR=2
-DISTANCE_LIMIT=2
+DISTANCE_LIMIT=5
 
 #Row class consists of a head of row, indicating first point in row within the sort;
 #row_coord, the coordinate of the row; row_list, a list of lists of all the id's
@@ -71,15 +71,19 @@ class Network_node(Point):
 
         draworder=0
 
-        def __init__(self,objectid,section_coord,row_coord,coordused,elevation):
+        def __init__(self,objectid,section_coord,row_coord,coord_used,elevation):
 
                 try:
+                        arcpy.AddMessage("object coordused is "+str(coord_used))
                         prev_row_coord=networklist[-1].row_coord
                         prev_section_coord=networklist[-1].section_coord
+                        coordused=networklist[-1].coordused
                         new_row_coord=row_coord
                         new_section_coord=section_coord
+                        new_coordused=coord_used
+                        
 
-                        validity=self.test_distance(prev_row_coord,prev_section_coord,new_row_coord,new_section_coord)
+                        validity=self.test_distance(prev_row_coord,prev_section_coord,new_row_coord,new_section_coord,coordused,new_coordused)
 
                         if validity==True:
 
@@ -113,31 +117,29 @@ class Network_node(Point):
                         self.ID=objectid
                         self.row_coord=row_coord
                         self.section_coord=section_coord
-                        self.coordused=coordused
+                        self.coordused=coord_used
                         self.draworder=Network_node.draworder
                         self.elevation=elevation
                         
                         networklist.add_to_network(self)
 
-        def test_distance(self,row_coord,section_coord,new_row_coord,new_section_coord):
+        def test_distance(self,row_coord,section_coord,new_row_coord,new_section_coord,coordused,new_coordused):
 
                 arcpy.AddMessage("new row coord "+str(new_row_coord))
                 arcpy.AddMessage("row coord "+str(row_coord))
                 arcpy.AddMessage("section coord "+str(section_coord))
                 arcpy.AddMessage("new section coord "+str(new_section_coord))
+                arcpy.AddMessage("coorused: "+str(coordused))
+                arcpy.AddMessage("newcoorused: "+str(new_coordused))
 
-                if (abs(new_row_coord-row_coord)>DISTANCE_LIMIT and abs(new_section_coord-section_coord)>DISTANCE_LIMIT):
-                        if (abs(new_row_coord-section_coord)>DISTANCE_LIMIT and abs(new_section_coord-row_coord)>DISTANCE_LIMIT):
-                                return False
+                difference_1=abs(new_section_coord-section_coord)
+                difference_2=abs(new_section_coord-row_coord)
 
-                        else:
-                                return True
-                
-##                distance=math.sqrt((new_row_coord-row_coord)**2+(new_section_coord-section_coord)**2)
-##                if (abs(new_row_coord-row_coord)>3 and abs(new_section_coord-section_coord)>3):
-##                        return False
-                else:
+                if ((difference_1<DISTANCE_LIMIT or difference_2<DISTANCE_LIMIT) and (difference_1>0 and difference_2>0)):
                         return True
+
+                else:
+                        return False
 
 ##
 ##                if Network_node.draworder==21:
@@ -249,83 +251,6 @@ def calculate_distance_between_points(first_point,last_point,last_appended,prev_
 
         else:
                 return False
-
-#use this function to divide points collected for subsort into two different subsorts
-def divide_subsort_into_two_parts(networklist,previous_row,subsortset,subsort_adj_ref,other_subsortset):
-
-        first_section_dict=dict(zip(previous_row.row_id_list[0],previous_row.row_coord_list[0]))
-        last_section_dict=dict(zip(previous_row.row_id_list[-1],previous_row.row_coord_list[-1]))
-
-##        arcpy.AddMessage("first section dict is :"+str(first_section_dict))
-##        arcpy.AddMessage("last section dict is :"+str(last_section_dict))
-
-        if len(first_section_dict)==0:
-
-##                arcpy.AddMessage("first section length flagged as zero")
-                distance_from_first=1
-                distance_from_last=0
-
-        else:
-                first_avg=sum(first_section_dict.values())/len(first_section_dict)
-                last_avg=sum(last_section_dict.values())/len(last_section_dict)
-
-                distance_from_first=abs(subsort_adj_ref-first_avg)
-                distance_from_last=abs(subsort_adj_ref-last_avg)
-
-        if distance_from_first>distance_from_last:
-
-##                arcpy.AddMessage("first section is greater distance")
-                try:
-##                        arcpy.AddMessage("dict:"+str(last_section_dict.keys()))
-##                        arcpy.AddMessage("list:"+str(other_subsortset.row_id_list[-1][-1]))
-                        result=adj_test(last_section_dict.values(),other_subsortset.row_coord_list[-1][-1])
-##                        arcpy.AddMessage("result is: "+str(result))
-
-                except Exception as e:
-                        arcpy.AddMessage(str(e))
-##                        arcpy.AddMessage("exception was raised")
-                        result=1
-
-                #if result =1 do what would normally be done and remove section from subsort and load into
-                #other subsort
-                if result==1:
-
-                        try:
-
-                                del subsortset.row_id_list[-1]
-
-                        except:
-                                pass
-
-                        other_subsortset.append_point(last_section_dict.keys(),last_section_dict.values())
-                        arcpy.AddMessage("put in os: "+str(last_section_dict.keys()))
-                        other_subsortset.append_section()
-
-                return 1
-
-        else:
-##                arcpy.AddMessage("last section is greater distance")
-                try:
-                        result=adj_test(first_section_dict.values(),subsortset.row_coord_list[-1][-1])
-
-                except:
-                        result=1
-
-                #if result =1 do what would normally be done and remove section from subsort and load into
-                #other subsort
-                if result==1:
-
-                        try:
-
-                                del other_subsortset.row_id_list[-1]
-
-                        except:
-                                pass
-
-                        subsortset.append_point(first_section_dict.keys(),first_section_dict.values())
-                        subsortset.append_section()
-
-                return 0
 
 def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
 
@@ -502,7 +427,8 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                         foundone=True
                 i+=1
         #if a viable point has been found append it
-        if foundone==True:       
+        if foundone==True:
+                arcpy.AddMessage("function coord used is "+str(lowestelev.coordused))
                 Network_node(lowestelev.object_id,lowestelev.section_coord,lowestelev.row_coord,lowestelev.coordused,lowestelev.elevation)
                 current_row.append_node_row(index)
                 return True
@@ -691,6 +617,7 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                         row_lowelev_list=[]
                         #always make lowestelev the elev of first point in new row
                         dist=(abs(point.section_coord-previousappend_row_coord))
+                        arcpy.AddMessage("right here coord used is "+str(coordused))
                         lowestelev=Low_elev_point(point.object_id,point.elevation,point.row_coord,point.section_coord,coordused,dist)
 
                         #reset this since you aren't sure if your in a multicolumnrow yet

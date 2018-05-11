@@ -158,23 +158,24 @@ class Subsort_set():
 
         def __init__(self,sort_type):
                 self.sort_type=sort_type
-                self.section_id_list=[]
-                self.section_coord_list=[]
+                self.section_id_list=None
+                self.section_coord_list=None
                 self.row_id_list=[]
                 self.row_coord_list=[]
 
         def append_point(self,object_id,section_coord):
-                self.section_id_list.append(object_id)
-##                arcpy.AddMessage("subsection id list is:"+str(self.section_id_list))
-                self.section_coord_list.append(section_coord)
+                self.section_id_list=object_id
+                arcpy.AddMessage("subsection id list is:"+str(self.section_id_list))
+                self.section_coord_list=section_coord
 
         def append_section(self):
-                if len(self.section_id_list)>0:
-                        self.row_id_list.append(self.section_id_list)
-                        arcpy.AddMessage("subsort list is:"+str(self.row_id_list))
-                        self.row_coord_list.append(self.section_coord_list)
-                        self.section_id_list=[]
-                        self.section_coord_list=[]
+                if type(self.section_id_list)==None:
+                        if len(self.section_id_list)>0:
+                                self.row_id_list.append(self.section_id_list)
+                                arcpy.AddMessage("subsort list is:"+str(self.row_id_list))
+                                self.row_coord_list.append(self.section_coord_list)
+                                self.section_id_list=[]
+                                self.section_coord_list=[]
 
 def convert_list(listt):
         #remove blanks from export list
@@ -399,24 +400,43 @@ def row_adj_test(object_id,current_row,previous_row,networklist):
                 else:
                         return True
 
-def delete_network_row(node_objectid,subsortset):
+#this functino is used for deleting parts of subsort that are either not lower then
+#the section with the lowest elev, or if append node is not actually the lowest elev
+#(if it got appended because it had the shortest distance) this function is used to
+#delete that point's section from the subsort 
+def delete_from_subsort(node_objectid,subsortset):
+        arcpy.AddMessage("mhmmm :"+str(node_objectid))
+        #if passed var is list delete every section containing a value in the list
+        if type(node_objectid) is list:
 
-        for section in subsortset.row_id_list:
-                if node_objectid in section:
-                        arcpy.AddMessage("deleted "+str(section))
-                        del section
+                arcpy.AddMessage("deleting list")
+                for objectid in node_objectid:
+                        arcpy.AddMessage("object id is "+str(objectid))
+                        for section in subsortset.row_id_list:
+                                arcpy.AddMessage("section is id is "+str(section))
+                                if objectid in section:
+                                        arcpy.AddMessage("deleted "+str(section))
+                                        del section
 
-                        return subsortset
+                return subsortset
 
-        return subsortset
+        #if passed var is a single value just delete section with that value
+        else:
+                arcpy.AddMessage("deleting a single")
+                for section in subsortset.row_id_list:
+                        if node_objectid in section:
+                                arcpy.AddMessage("deleted "+str(section))
+                                del section
+                                return subsortset
 
+                return subsortset
 #takes row list of lowest elevs in each section and
 #appends the one that is closest to the previous network node
 def append_network_node(row_lowelev_list,current_row,previous_row):
 
         min_dist=999999999999999999999
         i=0
-        lowest_of_all=min(row_lowelev_list)
+        lowest_of_all=min([x.elevation for x in row_lowelev_list])
         foundone=False
         
         for point in row_lowelev_list:
@@ -433,7 +453,9 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 Network_node(lowestelev.object_id,lowestelev.section_coord,lowestelev.row_coord,lowestelev.coordused,lowestelev.elevation)
                 current_row.append_node_row(index)
 
-                if lowest_of_all==lowestelev:
+                arcpy.AddMessage("LOA:="+str(lowest_of_all))
+                arcpy.AddMessage("LOWELEV:="+str(lowestelev))
+                if lowest_of_all==lowestelev.elevation:
                         return (True,"dont add row",i-1)
                 return (True,"add row",i-1)
 
@@ -577,10 +599,19 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                 subsortset.append_section()
 
                                 arcpy.AddMessage(str(row_lowelev_list))
-                                #delete section from subsort that containied the appended network node
 
+                                #delete section from subsort that containied the appended network node
                                 if len(row_lowelev_list)>0:
-                                        subsortset=delete_network_row(row_lowelev_list[result[2]].object_id,subsortset)
+
+                                        arcpy.AddMessage(str(result[1]))
+                                        #this is when whole row should be deleted from subsort because collected
+                                        #sections are all higher elevations then appended node
+                                        if result[1]=="dont add row":
+                                                object_id_list=[x.object_id for x in row_lowelev_list]
+                                                subsortset=delete_from_subsort(object_id_list,subsortset)
+
+                                        else:
+                                                subsortset=delete_from_subsort(row_lowelev_list[result[2]].object_id,subsortset)
 
                         #create new row objects for new row
                         if result[0]==True:

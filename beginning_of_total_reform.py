@@ -169,7 +169,7 @@ class Subsort_set():
                 self.section_coord_list=section_coord
 
         def append_section(self):
-                if type(self.section_id_list)==None:
+                if type(self.section_id_list)==list:                
                         if len(self.section_id_list)>0:
                                 self.row_id_list.append(self.section_id_list)
                                 arcpy.AddMessage("subsort list is:"+str(self.row_id_list))
@@ -412,24 +412,27 @@ def delete_from_subsort(node_objectid,subsortset):
                 arcpy.AddMessage("deleting list")
                 for objectid in node_objectid:
                         arcpy.AddMessage("object id is "+str(objectid))
-                        for section in subsortset.row_id_list:
+                        for section in subsortset.row_id_list[:]:
                                 arcpy.AddMessage("section is id is "+str(section))
                                 if objectid in section:
                                         arcpy.AddMessage("deleted "+str(section))
-                                        del section
+                                        subsortset.row_id_list.remove(section)
+                                        arcpy.AddMessage("Subsort set is"+str(subsortset.row_id_list))
 
                 return subsortset
 
         #if passed var is a single value just delete section with that value
         else:
                 arcpy.AddMessage("deleting a single")
-                for section in subsortset.row_id_list:
+                for section in subsortset.row_id_list[:]:
                         if node_objectid in section:
                                 arcpy.AddMessage("deleted "+str(section))
-                                del section
+                                subsortset.row_id_list.remove(section)
+                                arcpy.AddMessage("Subsort set is:"+str(subsortset.row_id_list))
                                 return subsortset
 
                 return subsortset
+        
 #takes row list of lowest elevs in each section and
 #appends the one that is closest to the previous network node
 def append_network_node(row_lowelev_list,current_row,previous_row):
@@ -437,15 +440,52 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
         min_dist=999999999999999999999
         i=0
         lowest_of_all=min([x.elevation for x in row_lowelev_list])
+        lowestelev=99999999999999999999999999999999999
         foundone=False
         
+##        for point in row_lowelev_list:
+##                arcpy.AddMessage("point.dist is"+str(point.dist))
+##                arcpy.AddMessage("min_dist is"+str(min_dist))
+##                arcpy.AddMessage("point.elevation is "+str(point.elevation))
+##                arcpy.AddMessage("lowestelev is "+str(lowestelev))
+##                if point.dist<=min_dist:
+##
+##                        #this is to handle the rare case that two points in different
+##                        #sections are the same distance apart
+##                        if point.dist==min_dist:
+##                                arcpy.AddMessage("identifyied as equal")
+##                                lowestelev=min(point.elevation, lowestelev)
+##
+##                        #this is for normal situations
+##                        else:
+##                                arcpy.AddMessage("identifyied as different")
+##                                lowestelev=row_lowelev_list[i]
+##                                
+##                        min_dist=lowestelev.dist
+##                        index=i
+##                        foundone=True
+
         for point in row_lowelev_list:
-                if point.dist<min_dist:
-##                        if row_adj_test(point.object_id,current_row,previous_row)==True:
-                        lowestelev=row_lowelev_list[i]
-                        min_dist=lowestelev.dist
-                        index=i
-                        foundone=True
+                arcpy.AddMessage("point.dist is"+str(point.dist))
+                arcpy.AddMessage("min_dist is"+str(min_dist))
+                arcpy.AddMessage("point.elevation is "+str(point.elevation))
+                arcpy.AddMessage("lowestelev is "+str(lowestelev))
+
+                #if point is closer or within a tolerance of previous identifed min_dist
+                if (point.dist-1)<=min_dist:
+                
+                        if point.elevation<lowestelev:
+                                lowestelev=row_lowelev_list[i]
+                                min_dist=lowestelev.dist
+                                index=i
+                                foundone=True
+                                
+
+                        #this is for normal situations
+                        else:
+                                pass
+                                
+
                 i+=1
         #if a viable point has been found append it
         if foundone==True:
@@ -454,7 +494,7 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 current_row.append_node_row(index)
 
                 arcpy.AddMessage("LOA:="+str(lowest_of_all))
-                arcpy.AddMessage("LOWELEV:="+str(lowestelev))
+                arcpy.AddMessage("LOWELEV:="+str(lowestelev.elevation))
                 if lowest_of_all==lowestelev.elevation:
                         return (True,"dont add row",i-1)
                 return (True,"add row",i-1)
@@ -655,6 +695,14 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                         new_section_tracker=point.section_coord
 
                         row_lowelev_list=[]
+
+                        if type(subsortset.section_id_list)==list:
+                                arcpy.AddMessage("\t\t length of subsort is:"+str(len(subsortset.row_id_list)))
+
+                        else:
+                                arcpy.AddMessage("not a liist")
+
+
                         #always make lowestelev the elev of first point in new row
                         dist=(abs(point.section_coord-previousappend_row_coord))
                         arcpy.AddMessage("right here coord used is "+str(coordused))

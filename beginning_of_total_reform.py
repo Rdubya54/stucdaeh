@@ -162,6 +162,7 @@ class Subsort_set():
                 self.section_coord_list=None
                 self.row_id_list=[]
                 self.row_coord_list=[]
+                self.piece_list=[]
 
         def append_point(self,object_id,section_coord):
                 self.section_id_list=object_id
@@ -177,6 +178,10 @@ class Subsort_set():
                                 self.section_id_list=[]
                                 self.section_coord_list=[]
 
+        def append_piece(self):
+                if len(self.row_id_list)>0:
+                        self.piece_list.append(self.row_id_list)
+                
 def convert_list(listt):
         #remove blanks from export list
         listt=[x for x in listt if x != [[]]]
@@ -443,28 +448,6 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
         lowestelev=99999999999999999999999999999999999
         foundone=False
         
-##        for point in row_lowelev_list:
-##                arcpy.AddMessage("point.dist is"+str(point.dist))
-##                arcpy.AddMessage("min_dist is"+str(min_dist))
-##                arcpy.AddMessage("point.elevation is "+str(point.elevation))
-##                arcpy.AddMessage("lowestelev is "+str(lowestelev))
-##                if point.dist<=min_dist:
-##
-##                        #this is to handle the rare case that two points in different
-##                        #sections are the same distance apart
-##                        if point.dist==min_dist:
-##                                arcpy.AddMessage("identifyied as equal")
-##                                lowestelev=min(point.elevation, lowestelev)
-##
-##                        #this is for normal situations
-##                        else:
-##                                arcpy.AddMessage("identifyied as different")
-##                                lowestelev=row_lowelev_list[i]
-##                                
-##                        min_dist=lowestelev.dist
-##                        index=i
-##                        foundone=True
-
         for point in row_lowelev_list:
                 arcpy.AddMessage("point.dist is"+str(point.dist))
                 arcpy.AddMessage("min_dist is"+str(min_dist))
@@ -494,7 +477,7 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 current_row.append_node_row(index)
 
                 arcpy.AddMessage("LOA:="+str(lowest_of_all))
-                arcpy.AddMessage("LOWELEV:="+str(lowestelev.elevation))
+                arcpy.AddMessage("LOWELEV:="+str(lowestelev))
                 if lowest_of_all==lowestelev.elevation:
                         return (True,"dont add row",i-1)
                 return (True,"add row",i-1)
@@ -515,14 +498,14 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                 arcpy.AddMessage("coord used is "+str(coordused))
 
         else:
-                if len(subsortset.row_id_list)==0:
+                if len(subsortset.piece_list)==0:
                         return networklist
 
                 arcpy.AddMessage("\t\t\t\tIn a subsort\n\n")
 
                 last_append_coord=networklist[-1].row_coord
 
-                fixed=convert_list(subsortset.row_id_list)
+                fixed=convert_list(subsortset.piece_list)
 
                 arcpy.AddMessage("Fixed is "+str(fixed))
                 #make feature layer of just points in subsort set
@@ -565,6 +548,8 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
         gap=False
         gap_and_low=False
         prevrow_state=None
+
+        length_after=None
 
         firstrow_tracker=None
         previousappend_section_coord=None
@@ -638,25 +623,48 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
 
                                 subsortset.append_section()
 
-                                arcpy.AddMessage(str(row_lowelev_list))
+                                arcpy.AddMessage("row elev list is"+str(row_lowelev_list))
 
-                                #delete section from subsort that containied the appended network node
+                                #delete necessary sections from subsort
                                 if len(row_lowelev_list)>0:
 
-                                        arcpy.AddMessage(str(result[1]))
+                                        arcpy.AddMessage("in here"+str(result[1]))
+
+                                        length_before=len(subsortset.row_id_list)
+                                        arcpy.AddMessage("length before is: "+str(length_before))
                                         #this is when whole row should be deleted from subsort because collected
                                         #sections are all higher elevations then appended node
                                         if result[1]=="dont add row":
                                                 object_id_list=[x.object_id for x in row_lowelev_list]
+                                               
                                                 subsortset=delete_from_subsort(object_id_list,subsortset)
-
+                                                
+                                        #this is when just section with appended node should be deleted because that
+                                        #section needs to stay out of subsort
                                         else:
                                                 subsortset=delete_from_subsort(row_lowelev_list[result[2]].object_id,subsortset)
+
+                                        length_after=len(subsortset.row_id_list)
+                                        arcpy.AddMessage("length after "+str(length_after))
+                                        arcpy.AddMessage("piece list length is"+str(len(subsortset.piece_list)))
+                                        
+                                        if len(subsortset.piece_list)==1:
+                                                if length_after==0:
+                                                        arcpy.AddMessage("resetting subsort")
+                                                        subsortset.piece_list=[]
+                                                else:
+                                                        arcpy.AddMessage("appending piece")
+                                                        subsortset.append_piece()
+
+                                        else:
+                                                arcpy.AddMessage("appending piece")
+                                                subsortset.append_piece()
 
                         #create new row objects for new row
                         if result[0]==True:
                                 previous_row=current_row
-                                
+
+                        subsortset.row_id_list=[]
                         current_row=Row(point.object_id,point.row_coord,point.section_coord)
 
                         #only collect head of row if there is only one section
@@ -671,18 +679,23 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                 if multicolumnrow==False:
                                         subsortneeded_flag=False
 
-                                        fixed=convert_list(list(subsortset.row_id_list))
-                                        arcpy.AddMessage(len(fixed))
-                                        arcpy.AddMessage(str(fixed))
-                                        if len(fixed)>2:
+                                        arcpy.AddMessage("peice is "+str(subsortset.piece_list))
 
-                                                lyr=arcpy.MakeFeatureLayer_management(mem_point,"slayer","OBJECTID IN "+fixed)
+                                        #don't launch subsort on sets that only have 1 piece, just skip them,
+                                        #they are never accurate
+                                        if len(subsortset.piece_list)>1:
 
-                                                arcpy.CopyFeatures_management(lyr,os.path.join(env.workspace,naming+"_"+naming+"subsort"))
+                                                fixed=convert_list(list(subsortset.piece_list))
+                                                arcpy.AddMessage(len(fixed))
+                                                arcpy.AddMessage(str(fixed))
+                                                if len(fixed)>2:
 
-                                                        
-                                                arcpy.AddMessage("Launching change OG subsort on set "+str(subsortset.row_id_list))
-                                                subsort(subsortset,networklist,sorttable,coordused,"change",networklist[-1].row_coord)
+                                                        lyr=arcpy.MakeFeatureLayer_management(mem_point,"slayer","OBJECTID IN "+fixed)
+
+                                                        arcpy.CopyFeatures_management(lyr,os.path.join(env.workspace,naming+"_"+naming+"subsort"))
+                                                                
+                                                        arcpy.AddMessage("Launching change OG subsort on set "+str(fixed))
+                                                        subsort(subsortset,networklist,sorttable,coordused,"change",networklist[-1].row_coord)
 
                                         consecutive_segment_counter=0
                                         subsortset=Subsort_set("normal")
@@ -697,7 +710,7 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                         row_lowelev_list=[]
 
                         if type(subsortset.section_id_list)==list:
-                                arcpy.AddMessage("\t\t length of subsort is:"+str(len(subsortset.row_id_list)))
+                                arcpy.AddMessage("\t\t length of subsort is:"+str(len(subsortset.piece_list)))
 
                         else:
                                 arcpy.AddMessage("not a liist")

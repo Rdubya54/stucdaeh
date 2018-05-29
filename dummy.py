@@ -102,7 +102,7 @@ class Network_node(Point):
                         validity2=self.slope_std_test(std)
                         validity3=self.elevation_test(elevation,prev_elev)
 
-                        if validity2==True and validity3==True:
+                        if (validity2==True and validity3==True) or Network_node.draworder==0:
 
                                 #increment draw order everytime new instance is created
                                 Network_node.draworder+=1
@@ -277,7 +277,9 @@ def calculate_distance_between_points(first_point,last_point,last_appended,prev_
 
         else:
                 return False
-
+        
+#determine sort order is for determine whether row and section coords should be sorted
+#ascending or descending. Getting this wrong produces disastourous results
 def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
 
                 search_fields=["NEAR_FID","POINT_X","POINT_Y","grid_code","Direction_of_Flow","OG_OID","draworder"]
@@ -291,29 +293,29 @@ def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
                 if sort_command=="change":
 
                         if coordused=="Y":
-                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X", "ASCENDING"],["POINT_Y","DESCENDING"]])
+                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X","DESCENDING"],["POINT_Y", "DESCENDING"],])
                                 coordused="X"
-                                resort_method="DESCENDING"
+                                #changed code here
                                 arcpy.AddMessage("\t\t coordused is "+str(coordused))
 
                         elif coordused=="X":
-                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_Y", "DESCENDING"],["POINT_X","DESCENDING"]])
+                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_Y","DESCENDING"],["POINT_X", "DESCENDING"]])
                                 coordused="Y"
-                                resort_method="ASCENDING"
 
                 else:
+                        arcpy.AddMessage("coorduseddd is "+str(coordused))
                         if coordused=="Y":
                                 arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_Y", "DESCENDING"],["POINT_X","DESCENDING"]])
                                 coordused="Y"
-                                resort_method="ASCENDING"
 
                         elif coordused=="X":
-                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X", "ASCENDING"],["POINT_Y","DESCENDING"]])
+                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X", "DESCENDING"],["POINT_Y","DESCENDING"]])
                                 coordused="X"
-                                resort_method="DESCENDING"
 
                 sort_counter=0
                 arcpy.AddMessage("is a reject "+str(is_a_reject))
+
+                #is_a_reject is True when sort is being resorted a second time because it started in an area that needs to be subsorted
                 if is_a_reject==False:
 
                         with arcpy.da.SearchCursor(subsorttable,search_fields) as deciding_cursor:
@@ -333,20 +335,21 @@ def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
 
                                 resort_required=calculate_distance_between_points(first_point,last_point,networklist[-1],prev_coord)
 
-
+                                #if calculate_distance_bt_points indicated wrong sort order on row
                                 if resort_required==True:
 
                                         arcpy.Delete_management(subsorttable)
 
                                         if coordused=="Y":
 
-                                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_Y", resort_method],["POINT_X","DESCENDING"]])
+                                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_Y", "ASCENDING"],["POINT_X","DESCENDING"]])
 
                                         else:
-                                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X", resort_method],["POINT_Y","DESCENDING"]])
+                                                arcpy.Sort_management(subsort_lyr, subsorttable, [["POINT_X", "ASCENDING"],["POINT_Y","DESCENDING"]])
 
                         except Exception as e:
-                                arcpy.AddMessage("First point "+str(e))
+                                arcpy.AddMessage("Exception because this is first point "+str(e))
+
                                 returned_tuple=(subsorttable,coordused)
                                 return returned_tuple
                         
@@ -364,7 +367,6 @@ def make_subsort_points(subsorttable,coordused):
         with arcpy.da.SearchCursor(subsorttable,search_fields) as objectcursor:
 
                 for row2 in objectcursor:
-
                         #depending on what coord we are sorting by,
                         #assign the proper attributes to point objects
                         if coordused=="X":
@@ -505,11 +507,13 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 
 def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_row_coord):
 
+        #for naming subsorts
         rando=str(randint(0,100))
         result=None
-
+        
         search_fields=["NEAR_FID","POINT_X","POINT_Y","grid_code","Direction_of_Flow","OG_OID","GRG_slope_1"]
 
+        #this will only occure when code is at begging of a line
         if subsortset is None:
                 arcpy.AddMessage("\t\t\t\tIn a NORMAL sort\n\n")
                 subsort_lyr=sorttable
@@ -521,6 +525,7 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
 
                 arcpy.AddMessage("\t\t\t\tIn a subsort\n\n")
 
+                #get row_coord of last appended network node
                 last_append_coord=networklist[-1].row_coord
 
                 fixed=convert_list(subsortset.piece_list)
@@ -541,17 +546,18 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
         arcpy.AddMessage("coord used is 3"+str(coordused))
 
         #only need to test for this if we are at beginning of line in intial sort
-        if subsortset==None:
-                result=subsort_at_start_test(subsort_points)
-
-        #steps taken to resort if sort starts out in subsort
-        if result==False:
-                arcpy.AddMessage("coord used is 4"+str(coordused))
-                returned_tuple=determine_sort_order(subsort_lyr,coordused,"change",True,rando)
-                subsort_table=returned_tuple[0]
-                coordused=returned_tuple[1]
-                arcpy.AddMessage("coord used is 5"+str(coordused))
-                subsort_points=make_subsort_points(subsort_table,coordused)
+##        if subsortset==None:
+##                arcpy.AddMessage("testing first sort's order...")
+##                result=subsort_at_start_test(subsort_points)
+##
+##        #steps taken to resort if sort starts out in subsort
+##        if result==False:
+##                arcpy.AddMessage("coord used is 4"+str(coordused))
+##                returned_tuple=determine_sort_order(subsort_lyr,coordused,"change",True,rando)
+##                subsort_table=returned_tuple[0]
+##                coordused=returned_tuple[1]
+##                arcpy.AddMessage("coord used is "+str(coordused))
+##                subsort_points=make_subsort_points(subsort_table,coordused)
 
         arcpy.AddMessage("\t\t\t result was "+str(result))
         arcpy.AddMessage("coordused is"+str(coordused))
@@ -900,6 +906,8 @@ networklist=Networklist()
 #in each point's attribute table.
 while counter<=streamlinecount:
 
+        Network_node.draworder=0
+
         arcpy.AddMessage("line counter is "+str(counter))
 
         #select stream with same OID as counter
@@ -956,33 +964,34 @@ while counter<=streamlinecount:
         env.workspace=arcpy.GetParameterAsText(2)
         sorttable=os.path.join(env.workspace,naming+"_sorttable_"+str(counter))
 
-        #sort table will be sorted by the necessary coordiante
-        #and ascending elevation value
+        #the cardinal direction that the line was determine by the flow direction
+        #tool. Use this data to help determine how points will be sorted
         if Direction=="N" or Direction=="NE" or Direction=="NW":
-
-                arcpy.Sort_management(mem_point, sorttable, [["POINT_Y", "ASCENDING"],["POINT_X","ASCENDING"]])
                 coordused="Y"
 
         elif Direction=="S" or Direction=="SE" or Direction=="SW":
 
-                arcpy.Sort_management(mem_point, sorttable, [["POINT_Y", "DESCENDING"],["POINT_X","DESCENDING"]])
                 coordused="Y"
 
         elif Direction=="W":
-
-                arcpy.Sort_management(mem_point, sorttable, [["POINT_X", "DESCENDING"],["POINT_Y","DESCENDING"]])
+                
                 coordused="X"
 
         elif Direction=="E":
 
-                arcpy.Sort_management(mem_point, sorttable, [["POINT_X", "ASCENDING"],["POINT_Y","ASCENDING"]])
                 coordused="X"
-
+                
         else:
                 continue
 
         subsortset=None
-        subsort(subsortset,networklist,sorttable,coordused,"same",None)
+        
+        points_for_line=arcpy.MakeFeatureLayer_management(mem_point,"kayer")
+        counting=arcpy.GetCount_management(points_for_line)
+        count=int(countingstreamlines.getOutput(0))
+        arcpy.AddMessage("count is "+str(count))
+
+        subsort(subsortset,networklist,points_for_line,coordused,"same",None)
 
         extractiondict={}
         extractionlist=[]
@@ -1023,9 +1032,14 @@ while counter<=streamlinecount:
                         except:
                                 arcpy.AddMessage("key is not in draw order dict"+str(key))
 
+        hc_network=os.path.join(env.workspace,naming+"_"+"HC_network")
+        arcpy.CopyFeatures_management(lyr,hc_network)
 
-        arcpy.CopyFeatures_management(lyr,os.path.join(env.workspace,naming+"_"+"HC_network"))
-
+thwag_network=os.path.join(env.workspace,naming+"_"+"thwag_network")
+arcpy.PointsToLine_management(hc_network, thwag_network, "NEAR_FID", "draworder")
 arcpy.Delete_management(mem_point)
 arcpy.Delete_management(mem_lines)
 arcpy.Delete_management(lyr)
+
+import sys
+sys.exit()

@@ -664,6 +664,11 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                                 row_lowelev_list.append(lowestelev)
                                 current_row.append_section()
 
+                                if subsortneeded_flag==True:
+
+                                        subsortset.append_point(current_row.row_id_list[-1],current_row.row_coord_list[-1])
+                                        subsortset.append_section()
+
                                 #append network node identified in previous row
                                 result=append_network_node(row_lowelev_list,current_row,previous_row)
 
@@ -671,8 +676,6 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                         #if there is a gap happening append the last section of the
                         #row to the subsort
                         if subsortneeded_flag==True:
-
-                                subsortset.append_section()
 
                                 arcpy.AddMessage("row elev list is"+str(row_lowelev_list))
 

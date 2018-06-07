@@ -7,10 +7,10 @@ from arcpy.sa import *
 from random import *
 import numpy
 
-GAP_DETECTOR=2
+GAP_DETECTOR=10
 DISTANCE_LIMIT=15
 STD_TOL=4
-ELEV_TOL=0.5
+ELEV_TOL=1.25
 
 #Row class consists of a head of row, indicating first point in row within the sort;
 #row_coord, the coordinate of the row; row_list, a list of lists of all the id's
@@ -18,8 +18,8 @@ ELEV_TOL=0.5
 #in each section. Once a new section is detected the old section list is appened
 #to the row list
 class Row:
-        '''This for dividing up the entire input areas into rows. The area is then analazyed
-        row by row, point by point'''
+        '''This class is for dividing up the entire input areas into rows and keep attributes
+        orgainzed. The area is analazyed row by row, point by point'''
         def __init__(self,head_of_row,row_coord,section_coord):
                 arcpy.AddMessage("row is "+str(head_of_row))
                 self.row_coord=row_coord
@@ -60,8 +60,10 @@ class Row:
         def append_node_row(self,index):
                 self.node_row_id=self.row_id_list[index]
                 self.node_row_coord=self.row_coord_list[index]
-                
+                               
 class Low_elev_point:
+        '''this class acts as a placeholder for the point with the current lowest elevation
+        found in the row'''
 
         def __init__(self,object_id,elevation,section_coord,row_coord,coordused,dist):
                 self.object_id=object_id
@@ -72,9 +74,9 @@ class Low_elev_point:
                 self.dist=dist
 
 class Point:
-
+        '''this class is used to define points and orgainze thier attributes in
+        managable way'''
         def __init__(self,object_id,section_coord,row_coord,elevation,slope):
-
                 self.object_id=object_id
                 self.row_coord=row_coord
                 self.section_coord=section_coord
@@ -117,13 +119,17 @@ class Network_node(Point):
                                 
                                 networklist.add_to_network(self)
 
-                                if Network_node.draworder==273:
-                                        arcpy.AddMessage("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+##                                if Network_node.draworder==70:
+##                                        arcpy.AddMessage("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 ##                                        import sys
 ##                                        sys.exit()
 
                         else:
                                 arcpy.AddMessage("candidate point rejected")
+                                if validity2==False:
+                                        arcpy.AddMessage("Failed slope test")
+                                if validity3==False:
+                                        arcpy.AddMessage("Failed elevation test")
 
                 except IndexError:
                         arcpy.AddMessage("must be first point i guess")
@@ -176,6 +182,10 @@ class Network_node(Point):
 ##                        sys.exit()
 class Networklist(list):
 
+        '''this class acts as list of Network_Node object. It keeps track of each official network node
+        after it has gone through the screening process of the methods in
+        Network node'''
+
         def __init__(self):
                 pass
 
@@ -185,6 +195,10 @@ class Networklist(list):
 
 class Subsort_set():
 
+        '''subsort sets are sets of points that all have the same sort necessaties.
+        When the need for the new sort is detected. Points begin to be added to
+        a new subsort_set'''
+
         def __init__(self,sort_type):
                 self.sort_type=sort_type
                 self.section_id_list=None
@@ -192,7 +206,7 @@ class Subsort_set():
                 self.row_id_list=[]
                 self.row_coord_list=[]
                 self.piece_list=[]
-
+        
         def append_point(self,object_id,section_coord):
                 self.section_id_list=object_id
                 arcpy.AddMessage("subsection id list is:"+str(self.section_id_list))
@@ -228,7 +242,7 @@ def subsort_at_start_test(subsort_points):
         row_count=0
         point_count=0
         prev_row_count=0
-
+        
         for point in subsort_points:
 
                 if row_count==0:
@@ -240,7 +254,7 @@ def subsort_at_start_test(subsort_points):
                         row_count+=1
                         point_count=0
 
-                        if row_count==6:
+                        if row_count==15:
                                 return True
                         
                 point_count+=1
@@ -278,7 +292,7 @@ def calculate_distance_between_points(first_point,last_point,last_appended,prev_
         else:
                 return False
         
-#determine sort order is for determine whether row and section coords should be sorted
+#determine sort order is for determining whether row and section coords should be sorted
 #ascending or descending. Getting this wrong produces disastourous results
 def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
 
@@ -357,11 +371,13 @@ def determine_sort_order(subsort_lyr,coordused,sort_command,is_a_reject,rando):
                 arcpy.AddMessage("returned tuple is "+str(returned_tuple[1]))
                 return returned_tuple
 
+#this is for setting up points to be added into a new subsort
+#this is necessary for keeping attributes in place
 def make_subsort_points(subsorttable,coordused):
 
         subsort_points=[]
 
-        search_fields=["NEAR_FID","POINT_X","POINT_Y","grid_code","Direction_of_Flow","OG_OID","draworder","GRG_slope_1"]
+        search_fields=["NEAR_FID","POINT_X","POINT_Y","grid_code","Direction_of_Flow","OG_OID","draworder","slope"]
 
         #create list of point objects in sort
         with arcpy.da.SearchCursor(subsorttable,search_fields) as objectcursor:
@@ -410,7 +426,6 @@ def row_adj_test(object_id,current_row,previous_row,networklist):
 
                 if len(previous_coords)!=0:
                         
-
                         #if section is congruent with previously appended row in subsort set
                         if (abs(max(candidate_coords)-max(previous_coords))<5 or (abs(min(candidate_coords)-min(previous_coords))<5)):
 
@@ -432,7 +447,7 @@ def row_adj_test(object_id,current_row,previous_row,networklist):
 #(if it got appended because it had the shortest distance) this function is used to
 #delete that point's section from the subsort 
 def delete_from_subsort(node_objectid,subsortset):
-        arcpy.AddMessage("mhmmm :"+str(node_objectid))
+        arcpy.AddMessage("deleting :"+str(node_objectid))
         #if passed var is list delete every section containing a value in the list
         if type(node_objectid) is list:
 
@@ -453,10 +468,10 @@ def delete_from_subsort(node_objectid,subsortset):
                 arcpy.AddMessage("deleting a single")
                 for section in subsortset.row_id_list[:]:
                         if node_objectid in section:
+                                arcpy.AddMessage("Subsort set is"+str(subsortset.row_id_list))
                                 arcpy.AddMessage("deleted "+str(section))
                                 subsortset.row_id_list.remove(section)
                                 arcpy.AddMessage("Subsort set is:"+str(subsortset.row_id_list))
-                                return subsortset
 
                 return subsortset
         
@@ -469,6 +484,9 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
         lowest_of_all=min([x.elevation for x in row_lowelev_list])
         lowestelev=99999999999999999999999999999999999
         foundone=False
+
+        listt=[x.elevation for x in row_lowelev_list]
+        arcpy.AddMessage("row_lowelev_list is "+str(listt))
         
         for point in row_lowelev_list:
                 arcpy.AddMessage("point.dist is"+str(point.dist))
@@ -478,7 +496,7 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
 
                 #if point is closer or within a tolerance of previous identifed min_dist
                 if (point.dist-1)<=min_dist:
-                
+
                         if point.elevation<lowestelev:
                                 lowestelev=row_lowelev_list[i]
                                 min_dist=lowestelev.dist
@@ -490,6 +508,8 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                                 pass                                
 
                 i+=1
+
+        arcpy.AddMessage("index is "+str(index))
         #if a viable point has been found append it
         if foundone==True:
                 arcpy.AddMessage("function coord used is "+str(lowestelev.coordused))
@@ -497,14 +517,21 @@ def append_network_node(row_lowelev_list,current_row,previous_row):
                 current_row.append_node_row(index)
 
                 arcpy.AddMessage("LOA:="+str(lowest_of_all))
-                arcpy.AddMessage("LOWELEV:="+str(lowestelev))
+                arcpy.AddMessage("LOWELEV:="+str(lowestelev.elevation))
+                #if elevation of point appended is the lowest of all in row, then don't add the row to the subsort. This is to prevent
+                #non channel points from being added to subsorts
+                #if the elevation of point appended is not the lowest elev in row, then you have a legitatmte need for a subsort,
+                #so add the row to the subsort
                 if lowest_of_all==lowestelev.elevation:
-                        return (True,"dont add row",i-1)
-                return (True,"add row",i-1)
+                        return (True,"dont add row",index)
+                return (True,"add row",index)
 
         else:
-                return (False, "dont add row",i-1)
-                
+                return (False, "dont add row",index)
+
+#this is a recursive function and is the meat and potatoes of this program. When at the beginning of the line, one subsort with all the lines
+#points are made. subsort is then called recursively as different sort order needs are found
+#as the code moves down stream
 def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_row_coord):
 
         #for naming subsorts
@@ -546,18 +573,18 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
         arcpy.AddMessage("coord used is 3"+str(coordused))
 
         #only need to test for this if we are at beginning of line in intial sort
-##        if subsortset==None:
-##                arcpy.AddMessage("testing first sort's order...")
-##                result=subsort_at_start_test(subsort_points)
-##
-##        #steps taken to resort if sort starts out in subsort
-##        if result==False:
-##                arcpy.AddMessage("coord used is 4"+str(coordused))
-##                returned_tuple=determine_sort_order(subsort_lyr,coordused,"change",True,rando)
-##                subsort_table=returned_tuple[0]
-##                coordused=returned_tuple[1]
-##                arcpy.AddMessage("coord used is "+str(coordused))
-##                subsort_points=make_subsort_points(subsort_table,coordused)
+        if subsortset==None:
+                arcpy.AddMessage("testing first sort's order...")
+                result=subsort_at_start_test(subsort_points)
+
+        #steps taken to resort if sort starts out in subsort
+        if result==False:
+                arcpy.AddMessage("coord used is 4"+str(coordused))
+                returned_tuple=determine_sort_order(subsort_lyr,coordused,"change",True,rando)
+                subsort_table=returned_tuple[0]
+                coordused=returned_tuple[1]
+                arcpy.AddMessage("coord used is "+str(coordused))
+                subsort_points=make_subsort_points(subsort_table,coordused)
 
         arcpy.AddMessage("\t\t\t result was "+str(result))
         arcpy.AddMessage("coordused is"+str(coordused))
@@ -783,14 +810,17 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
 
                                 #to get in this block, point must be at least almost lower then previous append network node
                                 #it
-                                arcpy.AddMessage((point.elevation-0.05) <= networklist[-1].elevation)
 
                                 gap_and_low=True
 
-                                arcpy.AddMessage("got into elif NE[-1]: "+str(networklist[-1].elevation))
+                                arcpy.AddMessage("got into elif NE[-1]")
 
                                 if gapsbeingcollected==False:
-                                        subsort_adj_ref=networklist[-1].row_coord
+                                        try:
+                                                subsort_adj_ref=networklist[-1].row_coord
+
+                                        except:
+                                                subsort_adj_ref=None
                                         gapsbeingcollected=True
 
                                 if len(current_row.row_id_list[-1])>0:
@@ -845,11 +875,11 @@ def subsort(subsortset,networklist,sorttable,coordused,sort_command,lastappend_r
                 except:
                         pass
 
-
         return networklist
 
 #################################################################################################################################################################
-
+#################################################################################################################################################################
+#################################################################################################################################################################
 env.overwriteOutput = True
 arcpy.SetLogHistory(False)
 arcpy.CheckOutExtension("3D")
@@ -893,7 +923,6 @@ arcpy.AddField_management(mem_point, "neighbor_x", "FLOAT")
 arcpy.AddField_management(mem_point, "neighbor_y", "FLOAT")
 arcpy.AddField_management(mem_point, "neighbor_id", "FLOAT")
 arcpy.AddField_management(mem_point, "draworder", "INTEGER")
-#####################################################################
 
 counter=1
 
@@ -1032,14 +1061,16 @@ while counter<=streamlinecount:
                         except:
                                 arcpy.AddMessage("key is not in draw order dict"+str(key))
 
+
         hc_network=os.path.join(env.workspace,naming+"_"+"HC_network")
         arcpy.CopyFeatures_management(lyr,hc_network)
 
+#finally convert point network into a thwag lines
 thwag_network=os.path.join(env.workspace,naming+"_"+"thwag_network")
 arcpy.PointsToLine_management(hc_network, thwag_network, "NEAR_FID", "draworder")
-arcpy.Delete_management(mem_point)
-arcpy.Delete_management(mem_lines)
-arcpy.Delete_management(lyr)
+##arcpy.Delete_management(mem_point)
+##arcpy.Delete_management(mem_lines)
+##arcpy.Delete_management(lyr)
 
-import sys
-sys.exit()
+##import sys
+##sys.exit()
